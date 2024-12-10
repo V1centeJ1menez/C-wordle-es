@@ -1,9 +1,9 @@
-/* wordle.txt */
+/*wordle.c*/
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <time.h>
 
 
 /* 
@@ -15,207 +15,228 @@
 #define ResultadoVerde 1
 #define ResultadoAmarillo 2
 #define ResultadoRojo 4
-#define max 5504
+#define MAX_PALABRAS 5504
 
 /* STRUCTS*/
-
-struct s_palabras{
-    char* *arr;
+typedef struct {
+    char** arr;
     int n;
-};
+} Palabras;
 
 /* Renombrando Tipos DE DATOS */
-typedef struct s_palabras Palabras;
 typedef char Resultado;
 
-
 /* DECLARACION DE FUNCIONES*/
-Palabras leerArchivo(char*);
-bool seEncuentraEnPalabra(char, char*);
-void ejemploPrinteoResultados(Resultado[]);
-Resultado* chequeoDePalabra(char*, char*);
-Resultado chequeoDeCaracter(char,int,char*);
-int main(int, char**);
-
-
+Palabras leerArchivo(const char*);
+bool seEncuentraEnPalabra(char, const char*);
+void ejemploPrinteoResultados(const char*, const Resultado*);
+Resultado* chequeoDePalabra(const char*, const char*);
+Resultado chequeoDeCaracter(char, int, const char*);
+void liberarPalabras(Palabras);
 
 
 /* DEFINICÓN DE FUNCIONES*/
 
 /* 
     leerArchivo
+    Lee un archivo de texto y carga las palabras de 5 letras en una estructura Palabras.
+    - Argumentos:
+        - nombreArchivo: Nombre del archivo a leer.
+    - Retorno:
+        - Un struct Palabras con un arreglo dinámico de palabras y el número total de palabras cargadas.
+    - Notas:
+        - Ignora palabras con longitud distinta a 5 caracteres.
+        - Gestiona la memoria dinámica para almacenar las palabras.
 */
-Palabras leerArchivo(char* nombreArchivo){
+Palabras leerArchivo(const char* nombreArchivo) {
+    FILE* archivo = fopen(nombreArchivo, "r");
+    if (!archivo) {
+        perror("Error al abrir archivo");
+        return (Palabras){.arr = NULL, .n = 0};
+    }
 
-    char buf[8];
-    int i, size;
-    FILE* archivo;
-    static char retorno[max][5];
-
-    archivo = fopen(nombreArchivo, "r");
-    if (!archivo){    
-        Palabras palabras = {
-            .arr = (char**)0,
-            .n = 0
-        };
+    Palabras palabras = {.arr = malloc(MAX_PALABRAS * sizeof(char*)), .n = 0};
+    if (!palabras.arr) {
+        perror("Error al asignar memoria");
+        fclose(archivo);
         return palabras;
-        perror("fopen");
     }
 
+    char buf[16];
+    while (fgets(buf, sizeof(buf), archivo)) {
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
 
-    i=0;
-    memset(buf, 0,8);
-
-    while (fgets(buf, 7, archivo)){
-        size = strlen(buf);
-        if (size < 1){
-            memset(buf,0,8);
-            continue;}
-        size--;
-        buf[size] = 0;
-
-        if(size != 5){
-            memset(buf,0,8);
-            continue;
-        }
-
-        retorno[i][0] = buf[0];
-        retorno[i][1] = buf[1];
-        retorno[i][2] = buf[2];
-        retorno[i][3] = buf[3];
-        retorno[i][4] = buf[4];
-
-        memset(buf, 0,8);
-        i++;
-        
-        if(max <= i){
-            break;
+        if (len == 5) {
+            palabras.arr[palabras.n] = strdup(buf);
+            if (!palabras.arr[palabras.n]) {
+                perror("Error al asignar memoria");
+                liberarPalabras(palabras);
+                fclose(archivo);
+                return (Palabras){.arr = NULL, .n = 0};
+            }
+            palabras.n++;
+            if (palabras.n >= MAX_PALABRAS) break;
         }
     }
-    
+
     fclose(archivo);
-
-    Palabras palabras = {
-        .arr = (char**)&retorno,
-        .n = i
-    };
     return palabras;
-   
-
 }
+
 
 /* 
     seEncuentraEnPalabra
+    Comprueba si un carácter se encuentra en una palabra.
+    - Argumentos:
+        - c: Carácter a buscar.
+        - str: Cadena donde se realiza la búsqueda.
+    - Retorno:
+        - true si el carácter está presente, false en caso contrario.
+    - Notas:
+        - Usa la función estándar strchr para realizar la búsqueda.
 */
-
-bool seEncuentraEnPalabra(char c, char *str){
-
-    bool retorno;
-    int i, size;
-
-    retorno = false;
-    size =strlen(str);
-
-    for (i=0; i<size; i++){
-        if(str[i] == c){
-            retorno = true;
-            break;
-        }
-    }
-
-    return retorno;
-
+bool seEncuentraEnPalabra(char c, const char* str) {
+    return strchr(str, c) != NULL;
 }
+
 
 /* 
     ejemploPrinteoResultados
+    Imprime un intento de palabra con colores según los resultados del chequeo.
+    - Argumentos:
+        - intento: Palabra ingresada por el usuario.
+        - resultado: Arreglo con los valores de resultado (verde, amarillo, rojo) para cada letra.
+    - Notas:
+        - Verde indica letra correcta en la posición correcta.
+        - Amarillo indica letra correcta en posición incorrecta.
+        - Rojo indica letra incorrecta.
 */
-
-void ejemploPrinteoResultados(Resultado* resultado){
-
-    int i;
-
-    for(i = 0; i<5; i++){
-        switch (resultado[i]){
+void ejemploPrinteoResultados(const char* intento, const Resultado* resultado) {
+    for (int i = 0; i < 5; i++) {
+        switch (resultado[i]) {
             case ResultadoVerde:
-                printf("%s\n", "Verde");
+                printf("\033[1;32m%c\033[0m", intento[i]);
                 break;
-            
             case ResultadoAmarillo:
-                printf("%s\n", "Amarillo");
+                printf("\033[1;33m%c\033[0m", intento[i]);
                 break;
-
             case ResultadoRojo:
-                printf("%s\n", "Rojo");
+                printf("\033[1;31m%c\033[0m", intento[i]);
                 break;
-            
             default:
-                printf("Desconocido: %d\n", resultado[i]);
+                printf("%c", intento[i]);
                 break;
         }
     }
-
-    return;
-
+    printf("\n");
 }
 
 
 /* 
     chequeoDePalabra
+    Compara un intento con la palabra objetivo y devuelve un arreglo de resultados.
+    - Argumentos:
+        - intento: Palabra ingresada por el usuario.
+        - palabra: Palabra objetivo contra la que se compara.
+    - Retorno:
+        - Un puntero a un arreglo dinámico de Resultados que indica el estado de cada letra.
+    - Notas:
+        - La memoria para el resultado debe liberarse después de usarla.
 */
+Resultado* chequeoDePalabra(const char* intento, const char* palabra) {
+    Resultado* resultado = malloc(5 * sizeof(Resultado));
+    if (!resultado) {
+        perror("Error al asignar memoria para resultado");
+        return NULL;
+    }
 
-Resultado* chequeoDePalabra(char* intento, char* palabra){
-
-    static Resultado resultado[5];
-    int i;
-
-    for(i = 0; i < 5; i++){
+    for (int i = 0; i < 5; i++) {
         resultado[i] = chequeoDeCaracter(intento[i], i, palabra);
     }
     return resultado;
 }
 
+
 /* 
     chequeoDeCaracter
-- Para una funcion en C, si se quiere pasar un string como parametro, se suele usar un puntero char
-- Función auxiliar para chequeo 
+    Determina el resultado de un carácter comparado con la palabra objetivo.
+    - Argumentos:
+        - intento: Carácter del intento.
+        - index: Índice del carácter en la palabra.
+        - palabra: Palabra objetivo contra la que se compara.
+    - Retorno:
+        - ResultadoVerde si el carácter coincide en posición y letra.
+        - ResultadoAmarillo si el carácter existe en otra posición.
+        - ResultadoRojo si el carácter no está presente.
 */
-Resultado chequeoDeCaracter(char intento, int index, char *palabra){
-    char valido;
-
-    valido = palabra[index];
-
-    if (intento == valido) {return ResultadoVerde;} 
-    else if (seEncuentraEnPalabra(intento, palabra)){ return ResultadoAmarillo;}
-
+Resultado chequeoDeCaracter(char intento, int index, const char* palabra) {
+    if (intento == palabra[index]) return ResultadoVerde;
+    if (seEncuentraEnPalabra(intento, palabra)) return ResultadoAmarillo;
     return ResultadoRojo;
-
 }
 
 
 /* 
-    chequeoDeCaracter
-- Para una funcion en C, si se quiere pasar un string como parametro, se suele usar un puntero char
-- Función auxiliar para chequeo 
+    liberarPalabras
+    Libera la memoria dinámica asignada a una estructura Palabras.
+    - Argumentos:
+        - palabras: La estructura Palabras a liberar.
+    - Notas:
+        - Libera cada palabra individualmente y luego el arreglo de punteros.
 */
-int main(int argc, char* argv[]){
+void liberarPalabras(Palabras palabras) {
+    for (int i = 0; i < palabras.n; i++) {
+        free(palabras.arr[i]);
+    }
+    free(palabras.arr);
+}
 
-    char *valido, *intento;
-    Resultado *resultado;
-
-    if (argc < 3){
-        fprintf(stderr, "Uso: %s PALABRAVALIDA PALABRAINTENTO\n", argv[0]);
-        return -1;
+int main() {
+    Palabras palabras = leerArchivo("palabras.txt");
+    if (!palabras.arr) {
+        printf("Error: no se pudieron cargar palabras.\n");
+        return 1;
     }
 
+    printf("Se cargaron %d palabras.\n", palabras.n);
+    srand((unsigned)time(NULL));
+    const char* palabraObjetivo = palabras.arr[rand() % palabras.n];
 
-    valido = argv[1];
-    intento = argv[2];
+    printf("Adivina la palabra de 5 letras:\n");
 
-    resultado = chequeoDePalabra(intento, valido);
+    char intento[16];
+    for (int intentos = 0; intentos < 6; intentos++) {
+        printf("Intento %d: ", intentos + 1);
+        if (!fgets(intento, sizeof(intento), stdin)) {
+            printf("Error leyendo entrada.\n");
+            break;
+        }
+        intento[strcspn(intento, "\n")] = '\0';  // Quita el '\n'
 
-    ejemploPrinteoResultados(resultado);
+        if (strlen(intento) != 5) {
+            printf("La palabra debe tener exactamente 5 letras.\n");
+            intentos--;
+            continue;
+        }
 
+        Resultado* resultados = chequeoDePalabra(intento, palabraObjetivo);
+        if (!resultados) break;
+
+        ejemploPrinteoResultados(intento, resultados);
+
+        if (strcmp(intento, palabraObjetivo) == 0) {
+            printf("¡Felicidades! Adivinaste la palabra.\n");
+            free(resultados);
+            break;
+        }
+        free(resultados);
+
+        if (intentos == 5) {
+            printf("Lo siento, no adivinaste. La palabra era: %s\n", palabraObjetivo);
+        }
+    }
+
+    liberarPalabras(palabras);
     return 0;
-};
-
+}
